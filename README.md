@@ -4,6 +4,13 @@
 > An enterprise-grade loan intelligence platform combining calibrated **CatBoost gradient boosting**, game-theoretic **SHAP explainability**, an interactive applicant assessment portal, and a dedicated **Administrator Console** for underwriting supervision.
 
 ---
+## 🌐 Live Demo
+
+- **Customer Website:** https://knowyourloan.pages.dev/
+- **Admin Dashboard:** https://knowyourloan.pages.dev/admin
+- **Backend API Docs:** https://knowyourloan-api.onrender.com/docs
+
+> **Note:** KnowYourLoan is an educational project using a model trained on synthetic data. Predictions are demonstrations and do not guarantee real-world loan approval.
 
 ## 1. Overview & Problem Statement
 
