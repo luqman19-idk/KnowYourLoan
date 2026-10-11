@@ -1,6 +1,8 @@
 """
 KnowYourLoan Database Persistence Layer
-SQLite-backed storage for loan applications, review actions, audit log events, and admin credentials.
+Dual-Engine Database Layer supporting:
+1. SQLite (Default local development: know_your_loan.db)
+2. PostgreSQL / Supabase PostgreSQL (Production / Cloud: DATABASE_URL)
 """
 
 import os
@@ -9,18 +11,136 @@ import sqlite3
 import hashlib
 import secrets
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple, Union
+
+# Detect database dialect
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+IS_POSTGRES = bool(DATABASE_URL and (
+    DATABASE_URL.startswith("postgres://") or
+    DATABASE_URL.startswith("postgresql://")
+))
 
 DB_PATH = os.environ.get(
     "KYL_DB_PATH",
     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "know_your_loan.db")
 )
 
-def get_db_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+# Conditionally import psycopg if PostgreSQL is targeted
+if IS_POSTGRES:
+    try:
+        import psycopg
+        from psycopg.rows import dict_row
+    except ImportError:
+        raise ImportError(
+            "psycopg is required when DATABASE_URL is set for PostgreSQL/Supabase. "
+            "Install it via: pip install 'psycopg[binary]>=3.1.18'"
+        )
+
+
+class DBConnectionWrapper:
+    """Unified wrapper around sqlite3.Connection and psycopg.Connection."""
+
+    def __init__(self, raw_conn, is_postgres: bool):
+        self.raw = raw_conn
+        self.is_postgres = is_postgres
+
+    def cursor(self):
+        raw_cur = self.raw.cursor()
+        return DBCursorWrapper(raw_cur, self.is_postgres)
+
+    def execute(self, sql: str, params: Optional[Union[tuple, list]] = None):
+        cur = self.cursor()
+        cur.execute(sql, params)
+        return cur
+
+    def commit(self):
+        self.raw.commit()
+
+    def rollback(self):
+        self.raw.rollback()
+
+    def close(self):
+        self.raw.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type:
+            self.rollback()
+        else:
+            self.commit()
+        self.close()
+
+
+class DBCursorWrapper:
+    """Unified cursor wrapper translating parameter placeholders and normalising row access."""
+
+    def __init__(self, raw_cursor, is_postgres: bool):
+        self.raw = raw_cursor
+        self.is_postgres = is_postgres
+
+    @property
+    def rowcount(self) -> int:
+        return self.raw.rowcount
+
+    @property
+    def lastrowid(self):
+        if hasattr(self.raw, "lastrowid"):
+            return self.raw.lastrowid
+        return None
+
+    def execute(self, sql: str, params: Optional[Union[tuple, list]] = None):
+        if self.is_postgres:
+            # PostgreSQL requires %s rather than SQLite's ?
+            # Replace '?' with '%s' safely
+            sql = sql.replace("?", "%s")
+            if params is not None:
+                params = list(params)
+                self.raw.execute(sql, params)
+            else:
+                self.raw.execute(sql)
+        else:
+            if params is not None:
+                self.raw.execute(sql, tuple(params))
+            else:
+                self.raw.execute(sql)
+        return self
+
+    def fetchone(self) -> Optional[Dict[str, Any]]:
+        row = self.raw.fetchone()
+        if row is None:
+            return None
+        return dict(row)
+
+    def fetchall(self) -> List[Dict[str, Any]]:
+        rows = self.raw.fetchall()
+        return [dict(r) for r in rows]
+
+    def close(self):
+        self.raw.close()
+
+
+def get_db_connection() -> DBConnectionWrapper:
+    """
+    Returns a unified database connection.
+    If DATABASE_URL is set, connects to PostgreSQL / Supabase.
+    Otherwise, connects to the local SQLite database at DB_PATH.
+    """
+    if IS_POSTGRES:
+        # Supabase / Render PostgreSQL connection
+        clean_url = DATABASE_URL
+        if clean_url.startswith("postgres://"):
+            clean_url = "postgresql://" + clean_url[len("postgres://"):]
+        raw_conn = psycopg.connect(clean_url, row_factory=dict_row)
+        return DBConnectionWrapper(raw_conn, is_postgres=True)
+    else:
+        # SQLite connection
+        raw_conn = sqlite3.connect(DB_PATH)
+        raw_conn.row_factory = sqlite3.Row
+        raw_conn.execute("PRAGMA foreign_keys = ON")
+        return DBConnectionWrapper(raw_conn, is_postgres=False)
+
 
 def hash_password(password: str, salt: Optional[str] = None) -> Tuple[str, str]:
     """Secure PBKDF2 HMAC SHA-256 password hashing with random salt."""
@@ -35,16 +155,26 @@ def hash_password(password: str, salt: Optional[str] = None) -> Tuple[str, str]:
     )
     return hash_bytes.hex(), salt
 
+
 def verify_password(password: str, stored_hash: str, salt: str) -> bool:
     new_hash, _ = hash_password(password, salt)
     return secrets.compare_digest(new_hash, stored_hash)
 
+
 def init_db():
+    """
+    Idempotent schema initialization.
+    Safely creates tables and indexes IF NOT EXISTS for both SQLite and PostgreSQL.
+    Never deletes, drops, or alters existing application records.
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
 
+    is_pg = conn.is_postgres
+    auto_id_type = "SERIAL PRIMARY KEY" if is_pg else "INTEGER PRIMARY KEY AUTOINCREMENT"
+
     # 1. Applications table
-    cursor.execute("""
+    cursor.execute(f"""
     CREATE TABLE IF NOT EXISTS applications (
         id TEXT PRIMARY KEY,
         created_at TEXT NOT NULL,
@@ -74,9 +204,9 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_apps_prob ON applications(approval_probability);")
 
     # 2. Review Notes table
-    cursor.execute("""
+    cursor.execute(f"""
     CREATE TABLE IF NOT EXISTS review_notes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id {auto_id_type},
         application_id TEXT NOT NULL,
         admin_username TEXT NOT NULL,
         note TEXT NOT NULL,
@@ -87,9 +217,9 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_notes_app_id ON review_notes(application_id);")
 
     # 3. Audit Log table
-    cursor.execute("""
+    cursor.execute(f"""
     CREATE TABLE IF NOT EXISTS audit_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id {auto_id_type},
         timestamp TEXT NOT NULL,
         admin_username TEXT NOT NULL,
         action TEXT NOT NULL,
@@ -126,7 +256,7 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sessions_expires ON admin_sessions(expires_at);")
 
     # Ensure default admin user exists
-    cursor.execute("SELECT username FROM admin_users WHERE username = 'admin'")
+    cursor.execute("SELECT username FROM admin_users WHERE username = ?", ("admin",))
     if not cursor.fetchone():
         initial_pw = os.environ.get("ADMIN_DEFAULT_PASSWORD", "Admin@KYL2026")
         p_hash, p_salt = hash_password(initial_pw)
@@ -138,6 +268,7 @@ def init_db():
 
     conn.commit()
     conn.close()
+
 
 def record_audit_log(
     admin_username: str,
@@ -159,6 +290,7 @@ def record_audit_log(
     )
     conn.commit()
     conn.close()
+
 
 def save_application(
     app_id: str,
@@ -205,6 +337,7 @@ def save_application(
         "review_status": "PENDING REVIEW"
     }
 
+
 def get_application_by_id(app_id: str) -> Optional[Dict[str, Any]]:
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -224,7 +357,7 @@ def get_application_by_id(app_id: str) -> Optional[Dict[str, Any]]:
         "SELECT id, admin_username, note, created_at FROM review_notes WHERE application_id = ? ORDER BY created_at ASC",
         (app_id,)
     )
-    notes = [dict(n) for n in cursor.fetchall()]
+    notes = cursor.fetchall()
     app_dict["review_notes"] = notes
 
     # Load audit history for this application
@@ -232,11 +365,12 @@ def get_application_by_id(app_id: str) -> Optional[Dict[str, Any]]:
         "SELECT id, timestamp, admin_username, action, previous_value, new_value, details FROM audit_logs WHERE application_id = ? ORDER BY timestamp DESC",
         (app_id,)
     )
-    history = [dict(h) for h in cursor.fetchall()]
+    history = cursor.fetchall()
     app_dict["audit_history"] = history
 
     conn.close()
     return app_dict
+
 
 def update_review_status(
     app_id: str,
@@ -285,6 +419,7 @@ def update_review_status(
         "review_status": new_status,
         "updated_at": now_iso
     }
+
 
 def update_manual_override(
     app_id: str,
@@ -340,6 +475,7 @@ def update_manual_override(
         "manual_override_at": now_iso
     }
 
+
 def add_review_note(app_id: str, note: str, admin_username: str) -> Dict[str, Any]:
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -374,6 +510,7 @@ def add_review_note(app_id: str, note: str, admin_username: str) -> Dict[str, An
         "note": note.strip(),
         "created_at": now_iso
     }
+
 
 def query_applications(
     page: int = 1,
@@ -486,6 +623,7 @@ def query_applications(
         "total_pages": total_pages
     }
 
+
 def get_overview_metrics(date_from: Optional[str] = None, date_to: Optional[str] = None) -> Dict[str, Any]:
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -525,16 +663,16 @@ def get_overview_metrics(date_from: Optional[str] = None, date_to: Optional[str]
     # Applications over time (daily buckets)
     cursor.execute(f"""
         SELECT
-            substr(created_at, 1, 10) AS date_bucket,
+            SUBSTR(created_at, 1, 10) AS date_bucket,
             COUNT(*) AS total,
             SUM(CASE WHEN model_prediction = 'APPROVED' THEN 1 ELSE 0 END) AS approved,
             SUM(CASE WHEN model_prediction = 'REJECTED' THEN 1 ELSE 0 END) AS rejected
         FROM applications
         {where_clause}
-        GROUP BY date_bucket
+        GROUP BY SUBSTR(created_at, 1, 10)
         ORDER BY date_bucket ASC
     """, params)
-    time_series = [dict(r) for r in cursor.fetchall()]
+    time_series = cursor.fetchall()
 
     # Recent applications (last 5)
     cursor.execute(f"""
@@ -544,7 +682,7 @@ def get_overview_metrics(date_from: Optional[str] = None, date_to: Optional[str]
         ORDER BY created_at DESC
         LIMIT 5
     """, params)
-    recent = [dict(r) for r in cursor.fetchall()]
+    recent = cursor.fetchall()
 
     conn.close()
 
@@ -564,6 +702,7 @@ def get_overview_metrics(date_from: Optional[str] = None, date_to: Optional[str]
         "time_series": time_series,
         "recent_applications": recent
     }
+
 
 def get_analytics_data() -> Dict[str, Any]:
     """Retrieves full distribution and feature correlation arrays from real persisted applications."""
@@ -662,6 +801,7 @@ def get_analytics_data() -> Dict[str, Any]:
         }
     }
 
+
 def get_audit_logs(page: int = 1, page_size: int = 30) -> Dict[str, Any]:
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -674,7 +814,7 @@ def get_audit_logs(page: int = 1, page_size: int = 30) -> Dict[str, Any]:
         "SELECT id, timestamp, admin_username, action, application_id, previous_value, new_value, details FROM audit_logs ORDER BY timestamp DESC LIMIT ? OFFSET ?",
         (page_size, offset)
     )
-    items = [dict(r) for r in cursor.fetchall()]
+    items = cursor.fetchall()
     conn.close()
 
     return {

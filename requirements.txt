@@ -11,5 +11,9 @@ shap>=0.45.0
 pandas>=2.2.0
 numpy>=1.26.0
 
+# Database Driver for Production (PostgreSQL / Supabase)
+psycopg[binary]>=3.1.18
+
 # Optional test runner
 # (Standard library modules used: sqlite3, hashlib, secrets, json, os, datetime, uuid)
+

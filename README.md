@@ -199,11 +199,23 @@ PORT=8000
 
 ---
 
-## 10. Data Persistence & Integrity
+## 10. Data Persistence & Cloud Deployment Architecture
 
-All submitted applications, underwriting statuses, notes, and audit logs are committed to SQLite database storage (`know_your_loan.db`).
-- **Durability:** Transactions use immediate commits. Records persist across server reboots and browser refreshes.
-- **Safety:** Unit tests (`test_backend.py`, `test_admin_backend.py`) use isolated temporary test databases (`kyl_test_*.db`), guaranteeing that production customer application records are never wiped or altered during automated testing.
+KnowYourLoan features an **intelligent dual-engine database persistence layer** ([`backend/database.py`](file:///backend/database.py)):
+
+### Local Development (SQLite)
+* **Default Engine:** Standard SQLite 3 (`know_your_loan.db`) with foreign key enforcement (`PRAGMA foreign_keys = ON;`).
+* **Zero Configuration:** No external database setup required; works out of the box.
+* **Test Isolation:** Integration tests automatically bind to temporary test databases (`kyl_test_*.db`), guaranteeing that local customer records are never erased.
+
+### Production & Cloud Deployment (PostgreSQL / Supabase / Render)
+* **Trigger:** Setting the `DATABASE_URL` environment variable automatically switches the engine to PostgreSQL.
+* **Driver:** High-performance, binary-optimized `psycopg 3` (`psycopg[binary]>=3.1.18`).
+* **Supabase / Render Integration:**
+  - Fully compatible with standard PostgreSQL and Supabase transaction poolers (port 6543 / 5432).
+  - Automatically handles `postgres://` to `postgresql://` URI normalization.
+  - Safe, idempotent schema initialization on boot (`CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`) without table resets or data truncation.
+* **Durability:** Every customer submission (`/predict`), status update, manual decision override, and audit log event is committed immediately with transactional rollback on failure.
 
 ---
 
