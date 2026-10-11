@@ -1,0 +1,55 @@
+/**
+ * KnowYourLoan Explainability Engine
+ * Formats and maps SHAP values computed from the production CatBoost model.
+ */
+
+export const READABLE_FEATURE_NAMES = {
+  age: 'Applicant Age',
+  gender: 'Gender',
+  marital_status: 'Marital Status',
+  dependents: 'Dependents Count',
+  education: 'Education Level',
+  employment_type: 'Employment Type',
+  employment_years: 'Employment Experience',
+  city_tier: 'City Tier',
+  monthly_income: 'Monthly Income',
+  coapplicant_income: 'Co-applicant Income',
+  other_monthly_income: 'Other Monthly Income',
+  existing_loan_count: 'Existing Loan Count',
+  existing_emi: 'Existing Monthly EMI',
+  credit_card_outstanding: 'Credit Card Outstanding',
+  monthly_expenses: 'Monthly Expenses',
+  total_outstanding_debt: 'Total Outstanding Debt',
+  credit_score: 'Credit Score (CIBIL)',
+  credit_history_years: 'Credit History Length',
+  active_credit_accounts: 'Active Credit Lines',
+  late_payments_12m: 'Late Payments (Past 12M)',
+  previous_defaults: 'Previous Defaults History',
+  credit_enquiries_6m: 'Credit Enquiries (Past 6M)',
+  credit_utilization: 'Credit Card Utilization',
+  savings_balance: 'Savings & Bank Balance',
+  property_value: 'Property Asset Value',
+  vehicle_value: 'Vehicle Asset Value',
+  investment_value: 'Investment Portfolio',
+  loan_amount: 'Requested Loan Amount',
+  loan_tenure_months: 'Loan Tenure (Months)',
+  loan_purpose: 'Loan Purpose',
+  annual_interest_rate: 'Annual Interest Rate',
+  new_loan_emi: 'Calculated New Loan EMI',
+  total_monthly_debt: 'Total Monthly Debt Obligations',
+  dti_ratio: 'Debt-to-Income (DTI) Ratio',
+  foir: 'Fixed Obligation to Income (FOIR)',
+};
+
+export const GLOBAL_SHAP_IMPORTANCE = [
+  { feature: 'late_payments_12m', readable: 'Late Payments (Past 12M)', meanAbsSHAP: 1.25, rank: 1 },
+  { feature: 'foir', readable: 'Fixed Obligation to Income (FOIR)', meanAbsSHAP: 0.85, rank: 2 },
+  { feature: 'credit_score', readable: 'Credit Score (CIBIL)', meanAbsSHAP: 0.65, rank: 3 },
+  { feature: 'savings_balance', readable: 'Savings & Liquid Balance', meanAbsSHAP: 0.45, rank: 4 },
+  { feature: 'loan_amount', readable: 'Requested Loan Amount', meanAbsSHAP: 0.38, rank: 5 },
+  { feature: 'credit_utilization', readable: 'Credit Card Utilization', meanAbsSHAP: 0.35, rank: 6 },
+  { feature: 'monthly_income', readable: 'Monthly Income', meanAbsSHAP: 0.30, rank: 7 },
+  { feature: 'previous_defaults', readable: 'Previous Defaults History', meanAbsSHAP: 0.28, rank: 8 },
+  { feature: 'new_loan_emi', readable: 'Calculated New Loan EMI', meanAbsSHAP: 0.25, rank: 9 },
+  { feature: 'dti_ratio', readable: 'Debt-to-Income (DTI) Ratio', meanAbsSHAP: 0.22, rank: 10 },
+];

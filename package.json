@@ -1,0 +1,45 @@
+{
+  "name": "knowyourloan",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "KnowYourLoan - AI Loan Assessment and Explainability",
+  "scripts": {
+    "dev": "vite",
+    "dev:customer": "vite --config vite.config.js --port 3000",
+    "dev:admin": "vite --config vite.admin.config.js",
+    "build": "vite build",
+    "build:admin": "vite build --config vite.admin.config.js",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "backend": "python -m uvicorn backend.app:app --host 127.0.0.1 --port 8000"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/luqman19-idk/KnowYourLoan.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/luqman19-idk/KnowYourLoan/issues"
+  },
+  "homepage": "https://github.com/luqman19-idk/KnowYourLoan#readme",
+  "dependencies": {
+    "canvas-confetti": "^1.9.4",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.52.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "tailwind-merge": "^3.7.0",
+    "vite": "^8.3.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/canvas-confetti": "^1.9.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "tailwindcss": "^4.3.3",
+    "vitest": "^5.0.3"
+  }
+}

@@ -1,0 +1,15 @@
+# KnowYourLoan - Python Backend & ML Runtime Dependencies
+
+# Web API & Server
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+pydantic>=2.6.0
+
+# Machine Learning & Explainability
+catboost>=1.2.0
+shap>=0.45.0
+pandas>=2.2.0
+numpy>=1.26.0
+
+# Optional test runner
+# (Standard library modules used: sqlite3, hashlib, secrets, json, os, datetime, uuid)
